@@ -31,7 +31,7 @@ CNAME           النطاق المخصص: lammahbite.com
 سطر واحد في أعلى `js/main.js`:
 
 ```js
-const WHATSAPP_NUMBER = "966593822656";
+const WHATSAPP_NUMBER = "966593822625";
 ```
 
 ## اللوجو
