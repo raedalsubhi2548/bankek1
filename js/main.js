@@ -193,7 +193,68 @@ function initNav() {
 
 /* ─── WHATSAPP LINKS ──────────────────────────────────────── */
 function initWALinks() {
-  qsa('[data-wa-msg]').forEach(el => { el.href = waLink(el.dataset.waMsg); });
+  qsa('[data-wa-msg]').forEach(el => {
+    el.href = waLink(el.dataset.waMsg);
+    el.target = '_blank';
+    el.rel = 'noopener';
+  });
+}
+
+/* ─── AD TRACKING (TikTok Pixel + GA4) ────────────────────── */
+function evtId(prefix) {
+  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function offerProps(o, extra) {
+  return Object.assign({
+    contents: [{ content_id: o.slug, content_name: o.title, content_type: 'product', price: o.priceNew, quantity: 1 }],
+    content_type: 'product',
+    value: o.priceNew,
+    currency: 'SAR',
+  }, extra || {});
+}
+
+function trackEvent(name, props) {
+  try {
+    if (window.ttq) window.ttq.track(name, props || {}, { event_id: evtId(name) });
+  } catch (_) {}
+}
+
+/* Saudi mobile -> E.164 (+9665XXXXXXXX), SHA-256 hashed for TikTok advanced matching */
+async function identifyPhone(raw) {
+  try {
+    if (!window.ttq || !window.crypto?.subtle) return;
+    let d = String(raw).replace(/\D/g, '');
+    if (d.startsWith('00')) d = d.slice(2);
+    if (d.startsWith('0')) d = '966' + d.slice(1);
+    else if (d.startsWith('5') && d.length === 9) d = '966' + d;
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('+' + d));
+    const hex = [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+    window.ttq.identify({ phone_number: hex });
+  } catch (_) {}
+}
+
+function initTracking() {
+  /* Any WhatsApp button/link on the site */
+  document.addEventListener('click', e => {
+    const wa = e.target.closest('[data-wa-msg]');
+    if (!wa) return;
+    trackEvent('Contact', { content_name: 'WhatsApp Button', content_type: 'product' });
+    if (window.gtag) gtag('event', 'contact_whatsapp', { link_location: wa.className || 'link' });
+  });
+
+  /* Opening an offer's details = ViewContent */
+  document.addEventListener('click', e => {
+    const btn = e.target.closest('[data-open-offer]');
+    const o = btn && OFFERS[btn.dataset.openOffer];
+    if (o) trackEvent('ViewContent', offerProps(o));
+  });
+
+  /* Landing on booking page with a pre-selected offer */
+  const offerKey = new URLSearchParams(location.search).get('offer');
+  if (qs('#booking-form') && offerKey && OFFERS[offerKey]) {
+    trackEvent('ViewContent', offerProps(OFFERS[offerKey]));
+  }
 }
 
 /* ─── OFFER CARDS ─────────────────────────────────────────── */
@@ -548,6 +609,10 @@ function initBookingForm() {
       notes ? `ملاحظات: ${notes}` : '',
     ].filter(Boolean).join('\n');
 
+    identifyPhone(phone);
+    trackEvent('SubmitForm', offer ? offerProps(offer, { description: 'Booking Form' }) : { content_name: 'Booking Form' });
+    if (window.gtag) gtag('event', 'generate_lead', { currency: 'SAR', value: offer ? offer.priceNew : 0, offer: offer ? offer.slug : '' });
+
     window.open(waLink(msg), '_blank', 'noopener');
   });
 }
@@ -594,6 +659,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initHeaderScroll();
   initNav();
   initWALinks();
+  initTracking();
   renderOfferCards();
   initOfferModal();
   initGallery();
